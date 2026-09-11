@@ -22,7 +22,7 @@ blueprint:
     Requires one input_datetime helper per TRV to record the last
     successfully confirmed update.
   domain: automation
-  source_url: "https://github.com/mattabc-lab/blueprint/blob/cbd769f24d7565b71c249bc6972cf1effef9647f/trv_external_temperature_control.yml"
+  source_url: "https://github.com/mattabc-lab/blueprint/blob/main/trv_external_temperature_control.yml"
 
   input:
 
