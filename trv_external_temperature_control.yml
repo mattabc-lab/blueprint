@@ -1,30 +1,47 @@
 blueprint:
   name: TRV External Temperature Control
   description: >
-    Controls an Aqara Smart Radiator Thermostat E1 using an external
+    Synchronises an Aqara Smart Radiator Thermostat E1 with an external
     temperature sensor.
 
-    The external temperature and the TRV external temperature are both
-    rounded to one decimal place before comparison. The TRV is updated
-    when the difference is 0.1°C or greater.
+    The external temperature and the TRV external temperature are rounded
+    to one decimal place before comparison. The TRV is updated when the
+    difference meets or exceeds the configurable temperature-change threshold.
 
-    A configurable minimum update interval is enforced. If a meaningful
-    temperature change occurs during the lockout period, the update is
-    deferred and the latest temperature is sent when the interval expires.
+    A configurable minimum update interval is enforced. If the temperature
+    changes during this period, the update is deferred and the latest
+    temperature is used when the interval expires.
 
-    Failed updates are retried at a configurable interval, with a maximum
-    number of retry attempts to prevent excessive Zigbee traffic.
+    Synchronisation can optionally be restricted to when the TRV climate
+    entity has hvac_mode set to "heat".
+
+    External sensor values are validated before being sent to the TRV.
+    Invalid, unavailable, or out-of-range sensor values cause the TRV to
+    fall back to its internal temperature.
+
+    Failed temperature updates are retried at a configurable interval,
+    with a maximum number of retry attempts to prevent excessive Zigbee
+    traffic.
+
+    The TRV external-temperature mode is verified before every update
+    attempt and restored automatically if it changes.
 
     The automation handles external sensor failures, TRV/Zigbee2MQTT
     availability problems, Home Assistant restarts, and periodic
     resynchronisation.
 
     Requires one input_datetime helper per TRV to record the last
-    successfully confirmed update.
+    successfully confirmed temperature update.
+
   domain: automation
-  source_url: "https://github.com/mattabc-lab/blueprint/blob/main/trv_external_temperature_control.yml"
+
+  source_url: https://github.com/mattabc-lab/blueprint/blob/main/trv_external_temperature_control.yml
 
   input:
+
+    # ================================================================
+    # External temperature sensor
+    # ================================================================
 
     external_temp_sensor:
       name: External Temperature Sensor
@@ -36,6 +53,11 @@ blueprint:
             domain: sensor
             device_class:
               - temperature
+
+
+    # ================================================================
+    # Aqara TRV
+    # ================================================================
 
     aqara_trv_device:
       name: Aqara TRV Device
@@ -58,25 +80,108 @@ blueprint:
               manufacturer: Aqara
               model: Aqara smart radiator thermostat E1 (SRTS-A01)
 
-    external_temperature_input_name:
-      name: TRV's External Temperature Entity Name
+
+    # ================================================================
+    # Sync only when heating
+    # ================================================================
+
+    sync_only_when_heat:
+      name: Sync Only When TRV Is in Heat Mode
       description: >
-        Keyword used to identify the TRV number entity which accepts the
-        external temperature. Defaults to 'external'.
+        Only synchronise the external temperature when the TRV climate
+        entity has hvac_mode set to "heat".
+      default: true
+      selector:
+        boolean:
+
+
+    # ================================================================
+    # External temperature entity name
+    # ================================================================
+
+    external_temperature_input_name:
+      name: TRV External Temperature Entity Name
+      description: >
+        Keyword used to identify the TRV number entity which accepts
+        the external temperature. Defaults to "external".
+      default: external
       selector:
         text:
-      default: "external"
+
+
+    # ================================================================
+    # Persistent last-update helper
+    # ================================================================
 
     last_update_helper:
       name: Last Successful TRV Update
       description: >
-        Select an input_datetime helper configured with both date and time.
-        This records the time the TRV successfully confirmed the last
-        external temperature update.
+        Select an input_datetime helper configured with both date and
+        time. This records the time the TRV successfully confirmed the
+        last external temperature update.
       selector:
         entity:
           filter:
             - domain: input_datetime
+
+
+    # ================================================================
+    # Temperature change threshold
+    # ================================================================
+
+    temperature_change_threshold:
+      name: Temperature Change Threshold
+      description: >
+        Minimum temperature difference required before the TRV is
+        updated. Both temperatures are rounded to one decimal place
+        before comparison.
+      default: 0.1
+      selector:
+        number:
+          min: 0.1
+          max: 1.0
+          step: 0.1
+          unit_of_measurement: "°C"
+          mode: box
+
+
+    # ================================================================
+    # Valid external sensor temperature range
+    # ================================================================
+
+    minimum_valid_temperature:
+      name: Minimum Valid External Temperature
+      description: >
+        External sensor readings below this value are considered
+        invalid. This protects the TRV from bad sensor data.
+      default: 1
+      selector:
+        number:
+          min: -20
+          max: 20
+          step: 1
+          unit_of_measurement: "°C"
+          mode: box
+
+
+    maximum_valid_temperature:
+      name: Maximum Valid External Temperature
+      description: >
+        External sensor readings above this value are considered
+        invalid. This protects the TRV from bad sensor data.
+      default: 35
+      selector:
+        number:
+          min: 20
+          max: 60
+          step: 1
+          unit_of_measurement: "°C"
+          mode: box
+
+
+    # ================================================================
+    # Minimum update interval
+    # ================================================================
 
     minimum_update_interval:
       name: Minimum Update Interval
@@ -93,6 +198,11 @@ blueprint:
           unit_of_measurement: minutes
           mode: box
 
+
+    # ================================================================
+    # Retry configuration
+    # ================================================================
+
     retry_interval:
       name: Failed Update Retry Interval
       description: >
@@ -107,18 +217,24 @@ blueprint:
           unit_of_measurement: minutes
           mode: box
 
+
     max_retries:
       name: Maximum Failed Update Retries
       description: >
         Maximum number of retries after an unsuccessful update.
-        This prevents a failed TRV from generating excessive traffic.
-      default: 3
+        The initial attempt is not included in this number.
+      default: 1
       selector:
         number:
           min: 1
           max: 5
           step: 1
           mode: box
+
+
+    # ================================================================
+    # Forced resynchronisation
+    # ================================================================
 
     force_update_interval:
       name: Force Update Interval
@@ -135,11 +251,16 @@ blueprint:
           unit_of_measurement: minutes
           mode: box
 
+
+    # ================================================================
+    # Confirmation timeout
+    # ================================================================
+
     confirmation_timeout:
       name: TRV Confirmation Timeout
       description: >
-        Maximum time to wait for the TRV entity to reflect the requested
-        temperature after a write.
+        Maximum time to wait for the TRV entity to reflect the
+        requested temperature after a write.
       default: 15
       selector:
         number:
@@ -149,31 +270,73 @@ blueprint:
           unit_of_measurement: seconds
           mode: box
 
+
+    # ================================================================
+    # External mode confirmation timeout
+    # ================================================================
+
+    external_mode_timeout:
+      name: External Mode Confirmation Timeout
+      description: >
+        Maximum time to wait for the Aqara TRV to confirm external
+        temperature mode after it is selected.
+      default: 15
+      selector:
+        number:
+          min: 5
+          max: 60
+          step: 5
+          unit_of_measurement: seconds
+          mode: box
+
+
+# ==================================================================
+# AUTOMATION SETTINGS
+# ==================================================================
+
 mode: single
 max_exceeded: silent
 
+
+# ==================================================================
+# VARIABLES
+# ==================================================================
+
 variables:
+
   aqara_trv_device: !input aqara_trv_device
   external_temp_sensor: !input external_temp_sensor
   external_temperature_input_name: !input external_temperature_input_name
   last_update_helper: !input last_update_helper
+
+  sync_only_when_heat: !input sync_only_when_heat
+
+  temperature_change_threshold: !input temperature_change_threshold
+  minimum_valid_temperature: !input minimum_valid_temperature
+  maximum_valid_temperature: !input maximum_valid_temperature
 
   minimum_update_interval: !input minimum_update_interval
   retry_interval: !input retry_interval
   max_retries: !input max_retries
   force_update_interval: !input force_update_interval
   confirmation_timeout: !input confirmation_timeout
+  external_mode_timeout: !input external_mode_timeout
+
+
+# ==================================================================
+# TRIGGERS
+# ==================================================================
 
 trigger:
 
-  # External sensor changed.
+  # External temperature changed.
   - trigger: state
     entity_id: !input external_temp_sensor
     id: temperature_change
 
   # Periodic recovery / refresh check.
   - trigger: time_pattern
-    minutes: "/1"
+    minutes: "/5"
     id: periodic_check
 
   # Home Assistant restarted.
@@ -182,29 +345,46 @@ trigger:
     id: home_assistant_start
 
 
+# ==================================================================
+# ACTIONS
+# ==================================================================
+
 action:
 
   # ================================================================
-  # Locate the TRV entities belonging to the selected device.
+  # Locate TRV entities belonging to the selected device.
   # ================================================================
+
   - variables:
 
       aqara_trv_device_name: >-
         {{ device_attr(aqara_trv_device, 'name') }}
 
+      aqara_trv_climate_entity: >-
+        {% set device_entity_ids = device_entities(aqara_trv_device) %}
+        {{ expand(states['climate'])
+          | selectattr('entity_id', 'in', device_entity_ids)
+          | map(attribute='entity_id')
+          | first
+        }}
+
       aqara_trv_select_entity: >-
-        {% set device_entities = device_entities(aqara_trv_device) %}
+        {% set device_entity_ids = device_entities(aqara_trv_device) %}
         {{ expand(states['select'])
-          | selectattr('entity_id', 'in', device_entities)
-          | selectattr('attributes.options', 'contains', 'external')
+          | selectattr('entity_id', 'in', device_entity_ids)
+          | selectattr(
+              'attributes.options',
+              'contains',
+              'external'
+            )
           | map(attribute='entity_id')
           | first
         }}
 
       aqara_trv_number_entity: >-
-        {% set device_entities = device_entities(aqara_trv_device) %}
+        {% set device_entity_ids = device_entities(aqara_trv_device) %}
         {{ expand(states['number'])
-          | selectattr('entity_id', 'in', device_entities)
+          | selectattr('entity_id', 'in', device_entity_ids)
           | selectattr(
               'entity_id',
               'contains',
@@ -216,24 +396,59 @@ action:
 
 
   # ================================================================
-  # External sensor unavailable.
+  # Validate external temperature sensor.
+  #
+  # IMPORTANT:
+  # Do not use float(0), because a broken sensor must not silently
+  # become 0°C.
   # ================================================================
+
+  - variables:
+
+      external_sensor_state: >-
+        {{ states(external_temp_sensor) }}
+
+      external_sensor_valid: >-
+        {{
+          has_value(external_temp_sensor)
+          and is_number(states(external_temp_sensor))
+          and
+          (
+            states(external_temp_sensor) | float
+          ) >= (minimum_valid_temperature | float)
+          and
+          (
+            states(external_temp_sensor) | float
+          ) <= (maximum_valid_temperature | float)
+        }}
+
+
+  # ================================================================
+  # External sensor unavailable / invalid.
+  #
+  # Fall back to internal temperature.
+  #
+  # This is deliberately processed BEFORE the heat-mode condition.
+  # If the external sensor has failed, we want the TRV to fall back
+  # safely even if it is not currently heating.
+  # ================================================================
+
   - if:
+
       - condition: template
         value_template: >-
-          {{
-            is_state(external_temp_sensor, 'unavailable')
-            or is_state(external_temp_sensor, 'unknown')
-          }}
+          {{ not external_sensor_valid }}
 
     then:
 
-      # Switch the TRV back to its internal sensor.
       - if:
+
           - condition: template
             value_template: >-
               {{ has_value(aqara_trv_select_entity) }}
+
         then:
+
           - action: select.select_option
             target:
               entity_id: "{{ aqara_trv_select_entity }}"
@@ -241,80 +456,108 @@ action:
               option: internal
 
       - if:
-          - condition: trigger
-            id: temperature_change
+
+          - condition: template
+            value_template: >-
+              {{ trigger.id == 'temperature_change' }}
+
         then:
+
           - action: system_log.write
             data:
               level: warning
               message: >
-                External temperature sensor unavailable for
+                External temperature sensor is unavailable or invalid for
                 {{ aqara_trv_device_name }}.
+                Value: {{ external_sensor_state }}.
                 TRV switched to internal temperature.
               logger: Aqara TRV
 
-      - stop: External temperature sensor unavailable
+      - stop: External temperature sensor unavailable or invalid
 
 
   # ================================================================
-  # TRV entities unavailable.
-  #
-  # This can happen during:
-  # - Zigbee2MQTT restart
-  # - TRV offline
-  # - MQTT restart
-  # - HA startup
+  # Check TRV climate entity.
   # ================================================================
+
   - if:
+
       - condition: template
         value_template: >-
           {{
-            not has_value(aqara_trv_number_entity)
-            or not has_value(aqara_trv_select_entity)
+            sync_only_when_heat
+            and
+            (
+              not has_value(aqara_trv_climate_entity)
+              or
+              not is_state(aqara_trv_climate_entity, 'heat')
+            )
           }}
 
     then:
 
-      # Wait briefly in case Zigbee2MQTT is still starting.
+      - stop: TRV is not in heat mode
+
+
+  # ================================================================
+  # Check TRV entities are available.
+  # ================================================================
+
+  - if:
+
+      - condition: template
+        value_template: >-
+          {{
+            not has_value(aqara_trv_number_entity)
+            or
+            not has_value(aqara_trv_select_entity)
+          }}
+
+    then:
+
       - wait_template: >-
           {{
             has_value(aqara_trv_number_entity)
-            and has_value(aqara_trv_select_entity)
+            and
+            has_value(aqara_trv_select_entity)
           }}
         timeout:
           seconds: 30
         continue_on_timeout: true
 
       - if:
+
           - condition: template
             value_template: >-
               {{
                 not has_value(aqara_trv_number_entity)
-                or not has_value(aqara_trv_select_entity)
+                or
+                not has_value(aqara_trv_select_entity)
               }}
+
         then:
+
           - stop: TRV unavailable
 
 
   # ================================================================
-  # Current temperature state.
-  #
-  # Both values are rounded to 1 decimal BEFORE comparison.
+  # Read current state.
   # ================================================================
+
   - variables:
 
       current_temperature: >-
-        {{ states(external_temp_sensor) | float(0) | round(1) }}
+        {{ states(external_temp_sensor) | float | round(1) }}
 
       trv_temperature: >-
-        {{ states(aqara_trv_number_entity) | float(0) | round(1) }}
+        {{ states(aqara_trv_number_entity) | float | round(1) }}
 
       temperature_difference: >-
         {{
           (
-            (states(external_temp_sensor) | float(0) | round(1))
+            (states(external_temp_sensor) | float | round(1))
             -
-            (states(aqara_trv_number_entity) | float(0) | round(1))
+            (states(aqara_trv_number_entity) | float | round(1))
           ) | abs
         }}
 
@@ -334,13 +577,20 @@ action:
   # ================================================================
   # Determine whether an update is required.
   # ================================================================
+
   - variables:
 
       temperature_update_required: >-
-        {{ temperature_difference >= 0.1 }}
+        {{
+          temperature_difference
+          >= (temperature_change_threshold | float)
+        }}
 
       forced_update_required: >-
-        {{ minutes_since_last_update >= force_update_interval }}
+        {{
+          minutes_since_last_update
+          >= (force_update_interval | float)
+        }}
 
       startup_update_required: >-
         {{ trigger.id == 'home_assistant_start' }}
@@ -350,33 +600,49 @@ action:
 
       update_required: >-
         {{
-          temperature_difference >= 0.1
-          or minutes_since_last_update >= force_update_interval
-          or trigger.id == 'home_assistant_start'
-          or not is_state(aqara_trv_select_entity, 'external')
+          temperature_difference
+            >= (temperature_change_threshold | float)
+          or
+          minutes_since_last_update
+            >= (force_update_interval | float)
+          or
+          trigger.id == 'home_assistant_start'
+          or
+          not is_state(aqara_trv_select_entity, 'external')
         }}
 
 
   # ================================================================
   # Nothing to do.
   # ================================================================
+
   - if:
+
       - condition: template
         value_template: "{{ not update_required }}"
+
     then:
+
       - stop: No update required
 
 
   # ================================================================
   # Minimum update interval.
   #
-  # If we updated recently, WAIT rather than discard the temperature
-  # change. After the delay, the current sensor value is read again.
+  # If we updated recently, wait until the interval expires.
+  #
+  # The latest temperature is deliberately re-read afterwards.
   # ================================================================
+
   - if:
+
       - condition: template
         value_template: >-
-          {{ minutes_since_last_update < minimum_update_interval }}
+          {{
+            minutes_since_last_update
+            <
+            (minimum_update_interval | float)
+          }}
 
     then:
 
@@ -385,7 +651,7 @@ action:
             {{
               (
                 (
-                  minimum_update_interval * 60
+                  (minimum_update_interval | float) * 60
                 )
                 -
                 (
@@ -403,22 +669,40 @@ action:
 
 
   # ================================================================
-  # Re-read the latest temperature AFTER the possible delay.
+  # Re-read latest sensor state AFTER the possible delay.
   # ================================================================
+
   - variables:
 
+      external_sensor_state: >-
+        {{ states(external_temp_sensor) }}
+
+      external_sensor_valid: >-
+        {{
+          has_value(external_temp_sensor)
+          and is_number(states(external_temp_sensor))
+          and
+          (
+            states(external_temp_sensor) | float
+          ) >= (minimum_valid_temperature | float)
+          and
+          (
+            states(external_temp_sensor) | float
+          ) <= (maximum_valid_temperature | float)
+        }}
+
       current_temperature: >-
-        {{ states(external_temp_sensor) | float(0) | round(1) }}
+        {{ states(external_temp_sensor) | float | round(1) }}
 
       trv_temperature: >-
-        {{ states(aqara_trv_number_entity) | float(0) | round(1) }}
+        {{ states(aqara_trv_number_entity) | float | round(1) }}
 
       temperature_difference: >-
         {{
           (
-            (states(external_temp_sensor) | float(0) | round(1))
+            (states(external_temp_sensor) | float | round(1))
             -
-            (states(aqara_trv_number_entity) | float(0) | round(1))
+            (states(aqara_trv_number_entity) | float | round(1))
           ) | abs
         }}
 
@@ -438,37 +722,95 @@ action:
   # ================================================================
   # Sensor may have become unavailable during the delay.
   # ================================================================
+
   - if:
+
       - condition: template
         value_template: >-
-          {{
-            not has_value(external_temp_sensor)
-          }}
+          {{ not external_sensor_valid }}
+
     then:
-      - stop: External temperature sensor unavailable
+
+      - action: select.select_option
+        target:
+          entity_id: "{{ aqara_trv_select_entity }}"
+        data:
+          option: internal
+
+      - action: system_log.write
+        data:
+          level: warning
+          message: >
+            External temperature sensor became invalid while waiting
+            to update {{ aqara_trv_device_name }}.
+            Value: {{ external_sensor_state }}.
+            TRV switched to internal temperature.
+          logger: Aqara TRV
+
+      - stop: External temperature sensor became invalid
 
 
   # ================================================================
-  # If temperature no longer requires an update, only continue if
-  # this is a startup, forced refresh, or external-mode recovery.
+  # Re-check heat mode AFTER the minimum update delay.
+  #
+  # The user may have switched the TRV off while the automation was
+  # waiting.
   # ================================================================
+
   - if:
+
       - condition: template
         value_template: >-
           {{
-            temperature_difference < 0.1
-            and minutes_since_last_update < force_update_interval
-            and trigger.id != 'home_assistant_start'
-            and is_state(aqara_trv_select_entity, 'external')
+            sync_only_when_heat
+            and
+            (
+              not has_value(aqara_trv_climate_entity)
+              or
+              not is_state(aqara_trv_climate_entity, 'heat')
+            )
           }}
+
     then:
+
+      - stop: TRV left heat mode while waiting
+
+
+  # ================================================================
+  # Re-evaluate whether an update is still required.
+  # ================================================================
+
+  - if:
+
+      - condition: template
+        value_template: >-
+          {{
+            temperature_difference
+            <
+            (temperature_change_threshold | float)
+            and
+            minutes_since_last_update
+            <
+            (force_update_interval | float)
+            and
+            trigger.id != 'home_assistant_start'
+            and
+            is_state(aqara_trv_select_entity, 'external')
+          }}
+
+    then:
+
       - stop: Temperature difference no longer requires update
 
 
   # ================================================================
-  # Make sure the TRV uses the external temperature.
+  # Ensure external temperature mode.
+  #
+  # Use state-based confirmation rather than a fixed delay.
   # ================================================================
+
   - if:
+
       - condition: template
         value_template: >-
           {{ not is_state(aqara_trv_select_entity, 'external') }}
@@ -481,15 +823,17 @@ action:
         data:
           option: external
 
-      # Allow the TRV to process the mode change.
-      - delay:
-          seconds: 10
+      - wait_template: >-
+          {{ is_state(aqara_trv_select_entity, 'external') }}
+        timeout:
+          seconds: "{{ external_mode_timeout | int }}"
+        continue_on_timeout: true
 
-      # Verify the mode change.
       - if:
+
           - condition: template
-            value_template: >-
-              {{ not is_state(aqara_trv_select_entity, 'external') }}
+            value_template: "{{ not wait.completed }}"
+
         then:
 
           - action: system_log.write
@@ -506,43 +850,173 @@ action:
   # ================================================================
   # SEND / RETRY LOOP
   #
-  # Maximum number of attempts:
-  #   1 initial attempt + max_retries retries
+  # Initial attempt + configured number of retries.
   #
-  # A retry waits retry_interval minutes.
+  # Before every attempt:
   #
-  # This prevents a failed TRV from being hammered indefinitely.
+  # 1. Check TRV availability
+  # 2. Validate sensor
+  # 3. Re-check heat mode
+  # 4. Restore external mode
+  # 5. Read latest sensor value
+  # 6. Write temperature
+  # 7. Confirm the TRV received it
   # ================================================================
+
   - repeat:
+
       count: "{{ (max_retries | int) + 1 }}"
 
       sequence:
 
         # ------------------------------------------------------------
-        # Check that the TRV is still available before every attempt.
+        # TRV availability
         # ------------------------------------------------------------
+
         - if:
+
             - condition: template
               value_template: >-
                 {{
                   not has_value(aqara_trv_number_entity)
-                  or not has_value(aqara_trv_select_entity)
+                  or
+                  not has_value(aqara_trv_select_entity)
                 }}
+
           then:
+
             - stop: TRV became unavailable
 
 
         # ------------------------------------------------------------
-        # Re-read the latest external temperature before EVERY attempt.
+        # Heat mode check before EVERY attempt
         # ------------------------------------------------------------
+
+        - if:
+
+            - condition: template
+              value_template: >-
+                {{
+                  sync_only_when_heat
+                  and
+                  (
+                    not has_value(aqara_trv_climate_entity)
+                    or
+                    not is_state(aqara_trv_climate_entity, 'heat')
+                  )
+                }}
+
+          then:
+
+            - stop: TRV is no longer in heat mode
+
+
+        # ------------------------------------------------------------
+        # Validate external sensor before EVERY attempt
+        # ------------------------------------------------------------
+
         - variables:
+
+            external_sensor_state: >-
+              {{ states(external_temp_sensor) }}
+
+            external_sensor_valid: >-
+              {{
+                has_value(external_temp_sensor)
+                and is_number(states(external_temp_sensor))
+                and
+                (
+                  states(external_temp_sensor) | float
+                ) >= (minimum_valid_temperature | float)
+                and
+                (
+                  states(external_temp_sensor) | float
+                ) <= (maximum_valid_temperature | float)
+              }}
+
+
+        - if:
+
+            - condition: template
+              value_template: "{{ not external_sensor_valid }}"
+
+          then:
+
+            - action: select.select_option
+              target:
+                entity_id: "{{ aqara_trv_select_entity }}"
+              data:
+                option: internal
+
+            - action: system_log.write
+              data:
+                level: warning
+                message: >
+                  External temperature became invalid for
+                  {{ aqara_trv_device_name }} during update attempt.
+                  Value: {{ external_sensor_state }}.
+                  TRV switched to internal temperature.
+              logger: Aqara TRV
+
+            - stop: External temperature sensor became invalid
+
+
+        # ------------------------------------------------------------
+        # Re-establish external mode before EVERY attempt
+        # ------------------------------------------------------------
+
+        - if:
+
+            - condition: template
+              value_template: >-
+                {{ not is_state(aqara_trv_select_entity, 'external') }}
+
+          then:
+
+            - action: select.select_option
+              target:
+                entity_id: "{{ aqara_trv_select_entity }}"
+              data:
+                option: external
+
+            - wait_template: >-
+                {{ is_state(aqara_trv_select_entity, 'external') }}
+              timeout:
+                seconds: "{{ external_mode_timeout | int }}"
+              continue_on_timeout: true
+
+            - if:
+
+                - condition: template
+                  value_template: "{{ not wait.completed }}"
+
+              then:
+
+                - action: system_log.write
+                  data:
+                    level: warning
+                    message: >
+                      Failed to restore external temperature mode for
+                      {{ aqara_trv_device_name }} before update attempt.
+                    logger: Aqara TRV
+
+                - stop: Failed to restore external mode
+
+
+        # ------------------------------------------------------------
+        # Read LATEST temperature.
+        # ------------------------------------------------------------
+
+        - variables:
+
             current_temperature: >-
-              {{ states(external_temp_sensor) | float(0) | round(1) }}
+              {{ states(external_temp_sensor) | float | round(1) }}
 
 
         # ------------------------------------------------------------
-        # Send the temperature.
+        # Send temperature to TRV
         # ------------------------------------------------------------
+
         - action: number.set_value
           target:
             entity_id: "{{ aqara_trv_number_entity }}"
@@ -551,8 +1025,9 @@ action:
 
 
         # ------------------------------------------------------------
-        # Wait for the TRV entity to reflect the requested value.
+        # Wait for TRV confirmation
         # ------------------------------------------------------------
+
         - wait_template: >-
             {{
               has_value(aqara_trv_number_entity)
@@ -577,29 +1052,30 @@ action:
         # ------------------------------------------------------------
         # SUCCESS
         # ------------------------------------------------------------
+
         - if:
+
             - condition: template
               value_template: "{{ wait.completed }}"
 
           then:
 
-            # Record ONLY a confirmed successful update.
+            # Only record a SUCCESSFUL confirmed update.
             - action: input_datetime.set_datetime
               target:
                 entity_id: "{{ last_update_helper }}"
               data:
                 timestamp: "{{ now().timestamp() }}"
 
-            # Exit the retry loop.
             - stop: TRV temperature update confirmed
 
 
         # ------------------------------------------------------------
         # FAILED ATTEMPT
-        #
-        # If there are retries remaining, wait before trying again.
         # ------------------------------------------------------------
+
         - if:
+
             - condition: template
               value_template: >-
                 {{ repeat.index <= (max_retries | int) }}
@@ -613,8 +1089,8 @@ action:
                   Aqara TRV {{ aqara_trv_device_name }}
                   did not confirm temperature
                   {{ current_temperature }}°C.
-                  Retry {{ repeat.index }} of {{ max_retries }} in
-                  {{ retry_interval }} minutes.
+                  Retry {{ repeat.index }} of {{ max_retries }}
+                  in {{ retry_interval }} minutes.
               logger: Aqara TRV
 
             - delay:
@@ -622,9 +1098,20 @@ action:
 
 
   # ================================================================
-  # All attempts failed.
+  # ALL ATTEMPTS FAILED
   #
-  # IMPORTANT:
-  # We deliberately DO NOT update last_update_helper.
-  #
-  # The next periodic
+  # last_update_helper is deliberately NOT updated.
+  # ================================================================
+
+  - action: system_log.write
+    data:
+      level: error
+      message: >
+        Aqara TRV {{ aqara_trv_device_name }}
+        failed to confirm external temperature after
+        {{ (max_retries | int) + 1 }} attempts.
+        Last attempted temperature:
+        {{ current_temperature }}°C.
+      logger: Aqara TRV
+
+  - stop: All temperature update attempts failed
