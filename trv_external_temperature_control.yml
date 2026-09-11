@@ -1,5 +1,5 @@
 blueprint:
-  name: Aqara TRV E1 External Temperature Control
+  name: TRV External Temperature Control
   description: >
     Controls an Aqara Smart Radiator Thermostat E1 using an external
     temperature sensor.
@@ -22,7 +22,7 @@ blueprint:
     Requires one input_datetime helper per TRV to record the last
     successfully confirmed update.
   domain: automation
-  source_url: ""
+  source_url: "https://github.com/mattabc-lab/blueprint/blob/main/trv_external_temperature_control.yml"
 
   input:
 
