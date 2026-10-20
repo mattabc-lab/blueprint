@@ -1,4 +1,3 @@
-```yaml
 blueprint:
   name: TRV External Temperature Control
   description: >
@@ -731,4 +730,3 @@ action:
       logger: Aqara TRV
 
   - stop: All temperature update attempts failed
-```
