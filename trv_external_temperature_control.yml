@@ -289,7 +289,7 @@ action:
                 External temperature sensor is unavailable or invalid for
                 {{ aqara_trv_device_name }}. Value: {{ external_sensor_state }}.
                 TRV switched to internal temperature.
-              logger: Aqara TRV
+              logger: TRV Sync
 
       - stop: External temperature sensor unavailable or invalid
 
@@ -465,7 +465,7 @@ action:
             External temperature sensor became invalid while waiting to update
             {{ aqara_trv_device_name }}. Value: {{ external_sensor_state }}.
             TRV switched to internal temperature.
-          logger: Aqara TRV
+          logger: TRV Sync
 
       - stop: External temperature sensor became invalid
 
@@ -534,7 +534,7 @@ action:
               message: >
                 Failed to switch {{ aqara_trv_device_name }}
                 to external temperature mode.
-              logger: Aqara TRV
+              logger: TRV Sync
 
           - stop: Failed to select external mode
 
@@ -595,7 +595,7 @@ action:
                   External temperature became invalid for {{ aqara_trv_device_name }}
                   during update attempt. Value: {{ external_sensor_state }}.
                   TRV switched to internal temperature.
-              logger: Aqara TRV
+                logger: TRV Sync
 
             - stop: External temperature sensor became invalid
 
@@ -625,7 +625,7 @@ action:
                     message: >
                       Failed to restore external temperature mode for
                       {{ aqara_trv_device_name }} before update attempt.
-                    logger: Aqara TRV
+                    logger: TRV Sync
 
                 - stop: Failed to restore external mode
 
