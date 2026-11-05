@@ -1,7 +1,7 @@
 blueprint:
-  name: Aqara E1 - External Temperature Synchronisation
+  name: TRV External Temperature Control
   description: >
-    Synchronises an Aqara Smart Radiator Thermostat E1 with an external
+    Synchronises a Smart Radiator Thermostat with an external
     Home Assistant temperature sensor.
 
     The automation validates the external sensor and TRV entities, supports
@@ -28,8 +28,8 @@ blueprint:
             device_class: temperature
 
     aqara_trv_device:
-      name: Aqara TRV Device
-      description: Select the Aqara Smart Radiator Thermostat E1.
+      name: TRV Device
+      description: Select the Smart Radiator Thermostat.
       selector:
         device:
           multiple: false
@@ -183,19 +183,7 @@ blueprint:
 
     confirmation_timeout:
       name: TRV Confirmation Timeout
-      description: Maximum time to wait for the external input and climate temperature to reflect the requested value.
-      default: 15
-      selector:
-        number:
-          min: 5
-          max: 60
-          step: 5
-          unit_of_measurement: seconds
-          mode: box
-
-    external_mode_timeout:
-      name: External/Internal Mode Confirmation Timeout
-      description: Maximum time to wait for the selected temperature mode to change.
+      description: Maximum time to wait for the external input and climate temperature to reflect the requested value and the selected temperature mode to change.
       default: 15
       selector:
         number:
@@ -224,7 +212,6 @@ variables:
   max_retries: !input max_retries
   force_update_interval: !input force_update_interval
   confirmation_timeout: !input confirmation_timeout
-  external_mode_timeout: !input external_mode_timeout
 
 trigger:
   - trigger: state
@@ -349,7 +336,7 @@ action:
 
           - wait_template: "{{ is_state(aqara_trv_select_entity, 'internal') }}"
             timeout:
-              seconds: "{{ external_mode_timeout | int }}"
+              seconds: "{{ confirmation_timeout | int }}"
             continue_on_timeout: true
 
           - if:
@@ -529,7 +516,7 @@ action:
               option: internal
           - wait_template: "{{ is_state(aqara_trv_select_entity, 'internal') }}"
             timeout:
-              seconds: "{{ external_mode_timeout | int }}"
+              seconds: "{{ confirmation_timeout | int }}"
             continue_on_timeout: true
       - action: system_log.write
         data:
@@ -609,7 +596,7 @@ action:
 
       - wait_template: "{{ is_state(aqara_trv_select_entity, 'external') }}"
         timeout:
-          seconds: "{{ external_mode_timeout | int }}"
+          seconds: "{{ confirmation_timeout | int }}"
         continue_on_timeout: true
 
       - if:
@@ -688,7 +675,7 @@ action:
                     option: internal
                 - wait_template: "{{ is_state(aqara_trv_select_entity, 'internal') }}"
                   timeout:
-                    seconds: "{{ external_mode_timeout | int }}"
+                    seconds: "{{ confirmation_timeout | int }}"
                   continue_on_timeout: true
             - action: system_log.write
               data:
@@ -787,7 +774,7 @@ action:
                 option: external
             - wait_template: "{{ is_state(aqara_trv_select_entity, 'external') }}"
               timeout:
-                seconds: "{{ external_mode_timeout | int }}"
+                seconds: "{{ confirmation_timeout | int }}"
               continue_on_timeout: true
             - if:
                 - condition: template
