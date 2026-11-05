@@ -426,7 +426,7 @@ action:
       temperature_difference: >-
         {{
           (
-            (states(external_temp_sensor) | float | round(1))
+            {{states(external_temp_sensor) | float | round(1) }}
             -
             {{ state_attr(aqara_trv_climate_entity, 'current_temperature') | float | round(1) }}
           ) | abs
