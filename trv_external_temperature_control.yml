@@ -243,15 +243,15 @@ action:
           | selectattr('attributes.options', 'contains', 'external')
           | map(attribute='entity_id')
           | first }}
-
+          
       aqara_trv_number_entity: >-
         {% set ids = device_entities(aqara_trv_device) %}
         {{ expand(states['number'])
-          | selectattr('entity_id', 'in', ids)
-          | selectattr('entity_id', 'contains', external_temperature_input_name)
-          | map(attribute='entity_id')
-          | first }}
-
+           | selectattr('entity_id','in',ids)
+           | selectattr('entity_id', 'contains', external_temperature_input_name)
+           | map(attribute='entity_id') 
+           | first}}
+      
   # Validate external sensor.
   - variables:
       external_sensor_state: "{{ states(external_temp_sensor) }}"
@@ -312,14 +312,12 @@ action:
       - condition: template
         value_template: >-
           {{
-            not has_value(aqara_trv_number_entity)
-            or not has_value(aqara_trv_select_entity)
+            not has_value(aqara_trv_select_entity)
           }}
     then:
       - wait_template: >-
           {{
-            has_value(aqara_trv_number_entity)
-            and has_value(aqara_trv_select_entity)
+            has_value(aqara_trv_select_entity)
           }}
         timeout:
           seconds: 30
@@ -329,8 +327,7 @@ action:
           - condition: template
             value_template: >-
               {{
-                not has_value(aqara_trv_number_entity)
-                or not has_value(aqara_trv_select_entity)
+                not has_value(aqara_trv_select_entity)
               }}
         then:
           - stop: TRV unavailable
@@ -341,18 +338,14 @@ action:
         {{ states(external_temp_sensor) | float | round(1) }}
 
       trv_temperature: >-
-        {{ states(aqara_trv_number_entity) | float | round(1) }}
+        {{ state_attr(aqara_trv_climate_entity, 'current_temperature') | float | round(1) }}
 
       trv_target_temperature: >-
         {{ state_attr(aqara_trv_climate_entity, 'temperature') | float(0) }}
 
       temperature_difference: >-
         {{
-          (
-            (states(external_temp_sensor) | float | round(1))
-            -
-            (states(aqara_trv_number_entity) | float | round(1))
-          ) | abs
+          (current_temperature - trv_temperature) | abs
         }}
 
       minutes_since_last_update: >-
@@ -425,7 +418,7 @@ action:
         {{ states(external_temp_sensor) | float | round(1) }}
 
       trv_temperature: >-
-        {{ states(aqara_trv_number_entity) | float | round(1) }}
+        {{ state_attr(aqara_trv_climate_entity, 'current_temperature') | float | round(1) }}
 
       trv_target_temperature: >-
         {{ state_attr(aqara_trv_climate_entity, 'temperature') | float(0) }}
@@ -435,7 +428,7 @@ action:
           (
             (states(external_temp_sensor) | float | round(1))
             -
-            (states(aqara_trv_number_entity) | float | round(1))
+            {{ state_attr(aqara_trv_climate_entity, 'current_temperature') | float | round(1) }}
           ) | abs
         }}
 
@@ -547,8 +540,7 @@ action:
             - condition: template
               value_template: >-
                 {{
-                  not has_value(aqara_trv_number_entity)
-                  or not has_value(aqara_trv_select_entity)
+                  not has_value(aqara_trv_select_entity)
                 }}
           then:
             - stop: TRV became unavailable
@@ -635,11 +627,10 @@ action:
               {{ states(external_temp_sensor) | float | round(1) }}
 
             trv_temperature: >-
-              {{ states(aqara_trv_number_entity) | float | round(1) }}
-
+              {{ state_attr(aqara_trv_climate_entity, 'current_temperature') | float | round(1) }}
             trv_target_temperature: >-
               {{ state_attr(aqara_trv_climate_entity, 'temperature') | float(0) }}
-
+      
         # Skip this attempt only when BOTH conditions are true.
         - if:
             - condition: template
@@ -662,9 +653,8 @@ action:
         # Wait for TRV confirmation.
         - wait_template: >-
             {{
-              has_value(aqara_trv_number_entity)
-              and (
-                states(aqara_trv_number_entity) | float(999) | round(1)
+              (
+                state_attr(aqara_trv_climate_entity, 'current_temperature') | float(999) | round(1)
               ) == (
                 current_temperature | float(999) | round(1)
               )
